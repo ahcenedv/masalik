@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>متابعة فتح وتهيئة المسالك الفلاحية - ولاية سكيكدة</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-fullscreen@1.0.2/dist/leaflet.fullscreen.css" />
+<script src="https://unpkg.com/leaflet-fullscreen@1.0.2/dist/Leaflet.fullscreen.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--g:#2e7d32;--gd:#1b5e20;--o:#e65100;--ink:#1a2e1f}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,#f3f7f1,#cfdcc8);min-height:100vh;padding:15px;display:flex;flex-direction:column;align-items:center}
+#mainApp{width:100%;max-width:1200px}
+#loginScreen{position:fixed;inset:0;background:linear-gradient(135deg,#10231a,#1b3a28);display:flex;justify-content:center;align-items:center;z-index:9999;padding:20px}
+#loginScreen.hidden{display:none}
+.login-box{background:#fff;padding:36px 32px;border-radius:24px;max-width:400px;width:100%;text-align:center;border:2px solid var(--g);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.login-box h2{color:var(--gd);font-size:24px;margin-bottom:6px}
+.login-box p{color:#666;font-size:13px;margin-bottom:20px}
+.login-box input{width:100%;padding:12px 16px;margin-bottom:12px;border:2px solid #e0e0e0;border-radius:30px;font:inherit;text-align:right}
+.login-box input:focus{border-color:var(--g);outline:none}
+.login-box button{width:100%;padding:12px;background:linear-gradient(135deg,var(--gd),var(--g));color:#fff;border:none;border-radius:30px;font:bold 16px inherit;cursor:pointer}
+.login-box .cancel-btn{background:#9e9e9e;margin-top:8px}
+.error-msg{color:#c62828;font-size:13px;margin-top:10px;min-height:20px}
+.header{background:linear-gradient(135deg,var(--gd),var(--g));color:#fff;padding:12px 25px;border-radius:16px;margin-bottom:12px;text-align:center;position:relative;box-shadow:0 8px 25px rgba(27,94,32,.35)}
+.header h1{font-size:25px}.header p{font-size:13px;opacity:.9;margin-top:2px}
+.logout-btn{position:absolute;left:15px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:30px;padding:5px 16px;font-size:12px;font-weight:bold;cursor:pointer}
+.user-info{position:absolute;right:15px;top:50%;transform:translateY(-50%);font-size:12px;background:rgba(255,255,255,.12);padding:4px 14px;border-radius:30px}
+.status-bar{background:#10231a;color:#aaa;padding:4px 12px;border-radius:30px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+.connected{color:#4caf50;font-weight:bold}.disconnected{color:#f44336;font-weight:bold}
+.enable-alerts-btn{background:var(--o);color:#fff;border:none;border-radius:30px;padding:3px 12px;font:bold 11px inherit;cursor:pointer}
+.enable-alerts-btn.on{background:var(--g);cursor:default}
+.dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px}
+.stat-card{background:#fff;padding:10px 12px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,.1);text-align:center;border-right:4px solid var(--c,#ccc)}
+.stat-card b{display:block;font-size:24px;color:var(--c)}.stat-card span{font-size:12px;color:#666}
+#map{width:100%;height:460px;border-radius:16px;border:3px solid var(--g);box-shadow:0 10px 40px rgba(0,0,0,.25);margin-bottom:10px;z-index:1}
+.form-container{background:#fff;padding:12px 16px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.12);margin-bottom:10px;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center}
+.form-container h3{width:100%;font-size:13px;color:var(--gd);text-align:center}
+.form-container input,.form-container select,.form-container button{padding:7px 12px;border-radius:30px;border:2px solid #e0e0e0;font:12px inherit}
+.form-container input:focus,.form-container select:focus{border-color:var(--g);outline:none}
+.form-container .btn{background:var(--g);color:#fff;border-color:var(--g);font-weight:bold;cursor:pointer}
+.form-container .btn.alt{background:var(--o);border-color:var(--o)}
+.form-container .loc{cursor:pointer;background:#fff}
+.staff-only{display:none!important}body.is-staff .staff-only{display:flex!important}
+body:not(.is-admin) .admin-only{display:none!important}
+.tracks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:10px}
+.track-card{background:#fff;border-radius:14px;padding:10px 14px;box-shadow:0 4px 15px rgba(0,0,0,.1);border-right:5px solid var(--g);font-size:12px}
+.track-card.done{border-right-color:#0d47a1}
+.track-card h4{font-size:14px;color:var(--ink);cursor:pointer}
+.track-card small{color:#666}
+.bar{height:10px;background:#e8ece6;border-radius:10px;margin:6px 0;position:relative;overflow:hidden}
+.bar i{position:absolute;top:0;right:0;height:100%;border-radius:10px}
+.bar .o{background:var(--o)}.bar .p{background:var(--g)}
+.track-card button{border:none;border-radius:30px;padding:4px 12px;font:bold 11px inherit;color:#fff;cursor:pointer;margin:4px 0 0 4px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;background:#fff;padding:6px 12px;border-radius:30px;font-size:12px;margin-bottom:10px}
+.legend s{display:inline-block;width:26px;height:5px;vertical-align:middle;margin-left:4px;text-decoration:none;border-radius:3px}
+#info{background:#fff;border-radius:30px;padding:7px 14px;font-size:12px;text-align:center;margin-bottom:10px;color:#444}
+#info.success{background:#e8f5e9;color:var(--gd)}#info.error{background:#ffebee;color:#c62828}
+.km-pin{width:34px;height:34px;border-radius:50%;color:#fff;font:bold 10px/34px 'Segoe UI';text-align:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+.km-pin.open{background:var(--o)}.km-pin.prep{background:var(--g)}
+.km-pin.latest{animation:ping 1.4s ease-out infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(230,81,0,.7)}100%{box-shadow:0 0 0 18px rgba(230,81,0,0)}}
+.popup-content{font-size:12px;line-height:1.8;direction:rtl}
+.popup-content button{border:none;border-radius:30px;padding:4px 12px;font:bold 11px inherit;color:#fff;cursor:pointer;margin-top:5px;width:100%;background:#c62828}
+.alert-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10000;display:none;justify-content:center;align-items:center}
+.alert-overlay.active{display:flex}
+.alert-box{background:linear-gradient(135deg,#10231a,#1f3a2a);border:3px solid #66bb6a;border-radius:24px;padding:28px 36px;max-width:480px;width:90%;text-align:center;color:#e0e0e0;box-shadow:0 0 60px rgba(102,187,106,.45);line-height:1.9}
+.alert-box .ic{font-size:56px}.alert-box .tt{color:#a5d6a7;font-size:26px;font-weight:bold}
+.alert-box strong{color:#ffcc80}
+.alert-box button{background:var(--g);color:#fff;border:none;padding:12px;border-radius:30px;font:bold 16px inherit;cursor:pointer;margin-top:14px;width:100%}
+@media(max-width:768px){.header h1{font-size:18px}.user-info{display:none}.logout-btn{position:static;transform:none;margin-top:8px}#map{height:340px}.form-container input,.form-container select,.form-container button{width:100%}}
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="hidden">
+  <div class="login-box">
+    <h2>🔐 دخول الطاقم الميداني</h2>
+    <p>الخريطة متاحة للجميع للمشاهدة. تسجيل الدخول مطلوب لإنشاء المسالك وتسجيل نقاط التقدم فقط.</p>
+    <input type="email" id="loginEmail" placeholder="✉️ البريد الإلكتروني" autocomplete="username" />
+    <input type="password" id="loginPassword" placeholder="🔑 كلمة المرور" autocomplete="current-password" />
+    <button id="loginSubmit" onclick="login()">🚀 تسجيل الدخول</button>
+    <button class="cancel-btn" onclick="closeLogin()">↩️ العودة للخريطة</button>
+    <div class="error-msg" id="loginError"></div>
+  </div>
+</div>
+
+<div id="mainApp">
+  <div class="header">
+    <h1>🚜 متابعة فتح وتهيئة المسالك الفلاحية - ولاية سكيكدة</h1>
+    <p>📍 كل كيلومتر يُفتح يظهر كنقطة GPS ويمتد الخط على الخريطة لحظياً</p>
+    <span class="user-info" id="userInfo" style="display:none"></span>
+    <button class="logout-btn" id="loginBtn" onclick="openLogin()">🔐 دخول الطاقم</button>
+    <button class="logout-btn" id="logoutBtn" onclick="logout()" style="display:none">🚪 خروج</button>
+  </div>
+
+  <div class="status-bar">
+    <span id="statusText">🔌 جاري الاتصال بقاعدة البيانات السحابية...</span>
+    <button type="button" id="enableAlertsBtn" class="enable-alerts-btn" onclick="enableAlerts()">🔔 تفعيل التنبيهات الصوتية</button>
+  </div>
+
+  <div class="dashboard">
+    <div class="stat-card" style="--c:#1565c0"><b id="sTracks">0</b><span>🛣️ إجمالي المسالك</span></div>
+    <div class="stat-card" style="--c:#2e7d32"><b id="sActive">0</b><span>🚧 قيد الإنجاز</span></div>
+    <div class="stat-card" style="--c:#0d47a1"><b id="sDone">0</b><span>🏁 منجزة</span></div>
+    <div class="stat-card" style="--c:#e65100"><b id="sOpen">0</b><span>📏 كلم مفتوح</span></div>
+    <div class="stat-card" style="--c:#1b5e20"><b id="sPrep">0</b><span>🚜 كلم مهيّأ</span></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="form-container staff-only" id="trackForm">
+    <h3>🛣️ إنشاء مسلك جديد</h3>
+    <input type="text" id="tName" placeholder="اسم المسلك" maxlength="100" style="flex:2;min-width:120px" />
+    <input type="text" id="tCommune" list="communes" placeholder="🏛️ البلدية" maxlength="60" style="flex:1.2;min-width:100px" />
+    <datalist id="communes"></datalist>
+    <input type="number" id="tPlanned" placeholder="الطول المبرمج (كلم)" min="0.1" step="0.1" style="flex:1;min-width:100px" />
+    <button class="btn" onclick="addTrack()">➕ إنشاء المسلك</button>
+  </div>
+
+  <div class="form-container staff-only" id="pointForm">
+    <h3>📌 تسجيل نقطة جديدة (كيلومتر مفتوح)</h3>
+    <select id="pTrack" style="flex:1.5;min-width:130px"></select>
+    <select id="pPhase" style="flex:1;min-width:90px">
+      <option value="open">🚧 فتح</option>
+      <option value="prep">🚜 تهيئة</option>
+    </select>
+    <input type="text" id="lat" placeholder="خط العرض" style="flex:1;min-width:90px" />
+    <input type="text" id="lng" placeholder="خط الطول" style="flex:1;min-width:90px" />
+    <button type="button" class="loc" onclick="getCurrentLocation()" title="موقعي الحالي">📍</button>
+    <input type="date" id="pDate" style="flex:1;min-width:110px" />
+    <input type="text" id="pNote" placeholder="📝 ملاحظة" maxlength="300" style="flex:1.5;min-width:100px" />
+    <button class="btn alt" id="addPointBtn" onclick="addPoint()">📌 تسجيل النقطة</button>
+  </div>
+
+  <div class="tracks" id="tracksList"></div>
+
+  <div class="legend">
+    <span><s style="background:#e65100"></s>خط الفتح</span>
+    <span><s style="background:#2e7d32"></s>خط التهيئة</span>
+    <span>🔆 النقطة الوامضة = آخر نقطة مسجلة</span>
+  </div>
+  <div id="info">👀 وضع المشاهدة - تظهر النقاط والخطوط لحظياً. التسجيل للطاقم المصرّح له بعد تسجيل الدخول.</div>
+</div>
+
+<div class="alert-overlay" id="alertOverlay">
+  <div class="alert-box">
+    <div class="ic">🚜</div>
+    <div class="tt">تم فتح كيلومتر جديد</div>
+    <div><strong id="aTrack"></strong><br><span id="aDetail"></span><br><span id="aNote"></span><br><small id="aTime"></small></div>
+    <button onclick="closeAlert()">✅ تم الاستلام</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+const GEO_BOUNDS={minLat:36.3,maxLat:37.3,minLng:5.9,maxLng:7.8};
+const PHASES={open:{label:'فتح',color:'#e65100'},prep:{label:'تهيئة',color:'#2e7d32'}};
+const COMMUNES=['أم الطوب','أمجاز الدشيش','أولاد أحبابة','أولاد عطية','الحدائق','السبت','الشرايع','القل','الكركرة','المرسى','الولجة بوالبلوط','بكوش لخضر','بن عزوز','بني بشير','بني زيد','بني ولبان','بودوخة','بوشطاطة','بين الويدان','تمالوس','جندل','الحروش','حمادي كرومة','خناق مايون','رمضان جمال','زردازة','زيتونة','سكيكدة','سيدي مزغيش','صالح بوالشعور','عزابة','عين بوزيان','عين زويت','عين شرشار','عين قشرة','فلفلة','قنواع','لغدير','وادي الزهور'];
+const esc=v=>String(v==null?'':v).replace(/[&<>"'`]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
+const safeId=id=>String(id==null?'':id).replace(/[^A-Za-z0-9_-]/g,'');
+const inBounds=(a,b)=>a>=GEO_BOUNDS.minLat&&a<=GEO_BOUNDS.maxLat&&b>=GEO_BOUNDS.minLng&&b<=GEO_BOUNDS.maxLng;
+const $=id=>document.getElementById(id);
+function todayStr(){const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())}
+function km(a,b){const R=6371,r=Math.PI/180,dLa=(b.lat-a.lat)*r,dLo=(b.lng-a.lng)*r;
+  const x=Math.sin(dLa/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+COMMUNES.forEach(n=>{const o=document.createElement('option');o.value=n;$('communes').appendChild(o)});
+$('pDate').value=todayStr();
+
+// ===== الخريطة =====
+const map=L.map('map',{center:[36.876,6.909],zoom:10,fullscreenControl:true,fullscreenControlOptions:{position:'bottomright'}});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
+const layer=L.layerGroup().addTo(map);
+
+// ===== الحالة =====
+let tracks=[],points=[],db=null,auth=null,currentUser=null,currentRole=null;
+let tracksReady=false,pointsReady=false,fitted=false,alertsEnabled=false,openPopupId=null,rebuilding=false;
+const baseTitle=document.title;
+const EDIT_ROLES=['admin','staff','firefighter'];
+const roleLabels={admin:'مدير',staff:'طاقم ميداني',firefighter:'طاقم ميداني'};
+const canEdit=()=>EDIT_ROLES.indexOf(currentRole)!==-1;
+const isAdmin=()=>currentRole==='admin';
+
+// ===== المصادقة =====
+const loginScreen=$('loginScreen'),loginError=$('loginError');
+function openLogin(){loginError.textContent='';loginScreen.classList.remove('hidden');setTimeout(()=>$('loginEmail').focus(),50)}
+function closeLogin(){loginScreen.classList.add('hidden');$('loginPassword').value=''}
+async function login(){
+  if(!auth){loginError.textContent='⚠️ خدمة المصادقة غير متاحة';return}
+  const e=$('loginEmail').value.trim(),p=$('loginPassword').value;
+  if(!e||!p){loginError.textContent='⚠️ أدخل البريد وكلمة المرور';return}
+  $('loginSubmit').disabled=true;
+  try{await auth.signInWithEmailAndPassword(e,p)}
+  catch(x){loginError.textContent=['auth/invalid-credential','auth/wrong-password','auth/user-not-found'].includes(x.code)?'❌ البريد أو كلمة المرور غير صحيحة':'❌ تعذّر تسجيل الدخول ['+(x.code||'')+']'}
+  finally{$('loginSubmit').disabled=false}
+}
+function logout(){if(auth)auth.signOut()}
+async function handleAuthChange(user){
+  if(!user){currentUser=null;currentRole=null;applyAuthUI();return}
+  let role=null;
+  try{const s=await db.collection('roles').doc(user.uid).get();if(s.exists)role=s.data().role}catch(e){}
+  if(EDIT_ROLES.indexOf(role)===-1){loginError.textContent='⛔ هذا الحساب غير مفعّل. تواصل مع المسؤول.';loginScreen.classList.remove('hidden');await auth.signOut();return}
+  currentUser=user;currentRole=role;closeLogin();applyAuthUI();
+  updateInfo('✅ مرحباً '+(user.email||'')+' - الصلاحية: '+roleLabels[role],'success');
+}
+function applyAuthUI(){
+  document.body.classList.toggle('is-staff',canEdit());
+  document.body.classList.toggle('is-admin',isAdmin());
+  $('loginBtn').style.display=currentUser?'none':'';
+  $('logoutBtn').style.display=currentUser?'':'none';
+  const u=$('userInfo');u.style.display=currentUser?'':'none';
+  u.textContent=currentUser?'👤 '+(currentUser.email||'')+' ('+roleLabels[currentRole]+')':'';
+  render();
+}
+
+// ===== Firebase =====
+const firebaseConfig={
+  apiKey:"AIzaSyAb14hoUiprLe1ey_NmOZTIAYF0EEPhclE",authDomain:"pistes21.firebaseapp.com",
+  projectId:"pistes21",storageBucket:"pistes21.firebasestorage.app",
+  messagingSenderId:"915466510873",appId:"1:915466510873:web:eb6b43e7f66abe7e220088"
+};
+function setStatus(ok,t){$('statusText').innerHTML=(ok?'✅ ':'⚠️ ')+esc(t)+' <span class="'+(ok?'connected':'disconnected')+'">('+(ok?'مباشر':'غير متصل')+')</span>'}
+function cleanTrack(d,id){
+  if(!d)return null;
+  return{id:safeId(id),name:String(d.name||'').slice(0,100),commune:String(d.commune||'').slice(0,60),
+    plannedKm:Number(d.plannedKm)>0?Number(d.plannedKm):0,status:d.status==='done'?'done':'active',
+    createdAt:String(d.createdAt||'').slice(0,40),createdBy:String(d.createdBy||'').slice(0,80)};
+}
+function cleanPoint(d,id){
+  if(!d)return null;const lat=Number(d.lat),lng=Number(d.lng);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||!PHASES[d.phase])return null;
+  return{id:safeId(id),trackId:safeId(d.trackId),phase:d.phase,lat:lat,lng:lng,
+    date:/^\d{4}-\d{2}-\d{2}$/.test(String(d.date||''))?d.date:todayStr(),
+    note:String(d.note||'').slice(0,300),addedAt:String(d.addedAt||'').slice(0,40),addedBy:String(d.addedBy||'').slice(0,80)};
+}
+function startCloud(){
+  try{firebase.initializeApp(firebaseConfig);db=firebase.firestore();auth=firebase.auth()}
+  catch(e){setStatus(false,'تعذّر تحميل خدمات السحابة');return}
+  auth.onAuthStateChanged(handleAuthChange);
+  db.collection('tracks').onSnapshot(s=>{
+    tracks=[];s.forEach(d=>{const t=cleanTrack(d.data(),d.id);if(t)tracks.push(t)});
+    tracksReady=true;setStatus(true,'متصل بقاعدة البيانات السحابية');render();
+  },e=>{console.error(e);setStatus(false,'تعذّر قراءة المسالك')});
+  db.collection('track_points').orderBy('addedAt').onSnapshot(s=>{
+    if(pointsReady){
+      const fresh=[];
+      s.docChanges().forEach(c=>{if(c.type==='added'&&!c.doc.metadata.hasPendingWrites){const p=cleanPoint(c.doc.data(),c.doc.id);if(p)fresh.push(p)}});
+      if(fresh.length)notifyNewPoints(fresh);
+    }
+    points=[];s.forEach(d=>{const p=cleanPoint(d.data(),d.id);if(p)points.push(p)});
+    pointsReady=true;render();
+  },e=>{console.error(e);setStatus(false,'تعذّر قراءة النقاط')});
+}
+window.addEventListener('offline',()=>setStatus(false,'انقطع الاتصال بالإنترنت'));
+window.addEventListener('online',()=>setStatus(true,'عاد الاتصال بالإنترنت'));
+
+// ===== الرسم =====
+function render(){
+  rebuilding=true;layer.clearLayers();
+  const byTrack={};tracks.forEach(t=>{t.openKm=0;t.prepKm=0;byTrack[t.id]=t});
+  const bounds=[];let selHtml='';
+  tracks.forEach(t=>{
+    const pts=points.filter(p=>p.trackId===t.id).sort((a,b)=>a.addedAt<b.addedAt?-1:1);
+    const latest=pts[pts.length-1];
+    ['open','prep'].forEach(ph=>{
+      const arr=pts.filter(p=>p.phase===ph);let total=0;
+      arr.forEach((p,i)=>{if(i)total+=km(arr[i-1],p);p.cum=total;bounds.push([p.lat,p.lng])});
+      if(ph==='open')t.openKm=total;else t.prepKm=total;
+      if(arr.length>1)L.polyline(arr.map(p=>[p.lat,p.lng]),{color:PHASES[ph].color,weight:ph==='open'?7:4,opacity:.9,lineCap:'round'}).addTo(layer);
+    });
+    pts.forEach(p=>{
+      const isLast=latest&&p.id===latest.id&&t.status==='active';
+      const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-17],
+        html:'<div class="km-pin '+p.phase+(isLast?' latest':'')+'">'+p.cum.toFixed(1)+'</div>'})})
+        .addTo(layer).bindPopup(pointPopup(p,t),{maxWidth:260});
+      m._pid=p.id;
+    });
+    if(t.status==='active')selHtml+='<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>';
+  });
+  const sel=$('pTrack'),keep=sel.value;sel.innerHTML=selHtml||'<option value="">— أنشئ مسلكاً أولاً —</option>';
+  if(keep)sel.value=keep;
+  if(!fitted&&tracksReady&&pointsReady&&bounds.length){map.fitBounds(bounds,{padding:[40,40],maxZoom:14});fitted=true}
+  if(openPopupId){layer.eachLayer(l=>{if(l._pid===openPopupId)l.openPopup()})}
+  rebuilding=false;
+  renderStats();renderList();
+}
+function pointPopup(p,t){
+  return '<div class="popup-content"><strong>🛣️ المسلك:</strong> '+esc(t.name)+'<br>'+
+    '<strong>🔧 العملية:</strong> '+PHASES[p.phase].label+'<br>'+
+    '<strong>📏 المسافة المنجزة:</strong> '+p.cum.toFixed(2)+' كلم<br>'+
+    '<strong>🗺️ GPS:</strong> '+p.lat.toFixed(6)+', '+p.lng.toFixed(6)+'<br>'+
+    '<strong>📅 التاريخ:</strong> '+esc(p.date)+'<br>'+
+    (p.note?'<strong>📝</strong> '+esc(p.note)+'<br>':'')+
+    '<small style="color:#888">🕒 '+esc(new Date(p.addedAt).toLocaleString('ar'))+(p.addedBy?' — 👤 '+esc(p.addedBy):'')+'</small>'+
+    (isAdmin()?'<button data-action="delpoint" data-id="'+esc(p.id)+'">🗑️ حذف النقطة</button>':'')+'</div>';
+}
+function renderStats(){
+  const act=tracks.filter(t=>t.status==='active').length;
+  $('sTracks').textContent=tracks.length;$('sActive').textContent=act;$('sDone').textContent=tracks.length-act;
+  $('sOpen').textContent=tracks.reduce((s,t)=>s+t.openKm,0).toFixed(1);
+  $('sPrep').textContent=tracks.reduce((s,t)=>s+t.prepKm,0).toFixed(1);
+}
+function renderList(){
+  const box=$('tracksList');
+  if(!tracks.length){box.innerHTML='<div class="track-card">🚫 لا توجد مسالك مسجلة بعد</div>';return}
+  box.innerHTML=tracks.slice().sort((a,b)=>a.createdAt<b.createdAt?1:-1).map(t=>{
+    const pl=t.plannedKm||Math.max(t.openKm,t.prepKm,1);
+    const o=Math.min(100,t.openKm/pl*100),p=Math.min(100,t.prepKm/pl*100);
+    const id=esc(t.id);
+    return '<div class="track-card '+(t.status==='done'?'done':'')+'"><h4 data-action="zoom" data-id="'+id+'">'+(t.status==='done'?'🏁 ':'🚧 ')+esc(t.name)+'</h4>'+
+      '<small>🏛️ '+esc(t.commune||'—')+(t.plannedKm?' | مبرمج: '+t.plannedKm+' كلم':'')+'</small>'+
+      '<div class="bar"><i class="o" style="width:'+o+'%"></i></div><div class="bar"><i class="p" style="width:'+p+'%"></i></div>'+
+      '<small>🚧 فتح: <b>'+t.openKm.toFixed(2)+'</b> كلم &nbsp; 🚜 تهيئة: <b>'+t.prepKm.toFixed(2)+'</b> كلم</small><br>'+
+      (canEdit()&&t.status==='active'?'<button style="background:#0d47a1" data-action="finish" data-id="'+id+'">🏁 إنهاء</button>':'')+
+      (isAdmin()?'<button style="background:#c62828" data-action="deltrack" data-id="'+id+'">🗑️ حذف</button>':'')+'</div>';
+  }).join('');
+}
+function zoomTrack(id){
+  const b=points.filter(p=>p.trackId===id).map(p=>[p.lat,p.lng]);
+  if(b.length){map.fitBounds(b,{padding:[50,50],maxZoom:16});window.scrollTo({top:$('map').offsetTop-10,behavior:'smooth'})}
+  else updateInfo('ℹ️ لا توجد نقاط لهذا المسلك بعد','');
+}
+// تفويض الأحداث
+$('tracksList').addEventListener('click',e=>{
+  const b=e.target.closest('[data-action]');if(!b)return;const id=b.dataset.id;
+  if(b.dataset.action==='zoom')zoomTrack(id);
+  else if(b.dataset.action==='finish')finishTrack(id);
+  else if(b.dataset.action==='deltrack')deleteTrack(id);
+});
+map.on('popupopen',e=>{
+  const s=e.popup._source;if(s&&s._pid)openPopupId=s._pid;
+  const el=e.popup.getElement();if(!el)return;
+  el.querySelectorAll('[data-action="delpoint"]').forEach(b=>b.addEventListener('click',()=>deletePoint(b.dataset.id)));
+});
+map.on('popupclose',()=>{if(!rebuilding)openPopupId=null});
+
+// ===== العمليات =====
+function getCurrentLocation(){
+  if(!navigator.geolocation){updateInfo('⚠️ متصفحك لا يدعم تحديد الموقع','error');return}
+  updateInfo('⏳ جاري الحصول على الموقع...','');
+  navigator.geolocation.getCurrentPosition(p=>{
+    $('lat').value=p.coords.latitude.toFixed(6);$('lng').value=p.coords.longitude.toFixed(6);
+    map.flyTo([p.coords.latitude,p.coords.longitude],16,{duration:1});
+    updateInfo('📍 تم تحديد موقعك (الدقة ≈ '+Math.round(p.coords.accuracy)+' م)','success');
+  },()=>updateInfo('⚠️ لم نتمكن من تحديد موقعك','error'),{enableHighAccuracy:true,timeout:15000});
+}
+function addTrack(){
+  if(!canEdit()){updateInfo('⚠️ للطاقم المصرّح له فقط','error');return}
+  const name=$('tName').value.trim().slice(0,100);
+  if(!name){updateInfo('⚠️ أدخل اسم المسلك','error');return}
+  const planned=parseFloat($('tPlanned').value);
+  db.collection('tracks').add({name:name,commune:$('tCommune').value.trim().slice(0,60),
+    plannedKm:Number.isFinite(planned)&&planned>0?planned:0,status:'active',
+    createdAt:new Date().toISOString(),createdBy:currentUser.email})
+  .then(()=>{$('tName').value='';$('tCommune').value='';$('tPlanned').value='';updateInfo('✅ تم إنشاء المسلك "'+name+'"','success')})
+  .catch(e=>updateInfo(e.code==='permission-denied'?'⛔ ليست لديك صلاحية':'⚠️ تعذّر الحفظ','error'));
+}
+function addPoint(){
+  if(!canEdit()){updateInfo('⚠️ للطاقم المصرّح له فقط - سجّل الدخول أولاً','error');return}
+  const trackId=$('pTrack').value,phase=$('pPhase').value;
+  const lat=parseFloat($('lat').value),lng=parseFloat($('lng').value);
+  if(!trackId){updateInfo('⚠️ اختر المسلك','error');return}
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)){updateInfo('⚠️ أدخل إحداثيات صحيحة أو اضغط 📍','error');return}
+  if(!inBounds(lat,lng)){updateInfo('⚠️ الإحداثيات خارج ولاية سكيكدة','error');return}
+  const d=$('pDate').value,btn=$('addPointBtn');btn.disabled=true;
+  db.collection('track_points').add({trackId:trackId,phase:phase,lat:lat,lng:lng,
+    date:/^\d{4}-\d{2}-\d{2}$/.test(d)?d:todayStr(),note:$('pNote').value.trim().slice(0,300),
+    addedAt:new Date().toISOString(),addedBy:currentUser.email})
+  .then(()=>{$('lat').value='';$('lng').value='';$('pNote').value='';
+    updateInfo('✅ تم تسجيل النقطة وتمديد الخط','success');map.flyTo([lat,lng],15,{duration:1.2})})
+  .catch(e=>updateInfo(e.code==='permission-denied'?'⛔ ليست لديك صلاحية':'⚠️ تعذّر الحفظ','error'))
+  .finally(()=>{btn.disabled=false});
+}
+function finishTrack(id){
+  if(!canEdit())return;if(!confirm('🏁 تأكيد إنهاء المسلك؟'))return;
+  db.collection('tracks').doc(safeId(id)).update({status:'done',completedAt:new Date().toISOString(),completedBy:currentUser.email})
+  .then(()=>updateInfo('🏁 تم إنهاء المسلك','success')).catch(()=>updateInfo('⚠️ تعذّر التنفيذ','error'));
+}
+function deletePoint(id){
+  if(!isAdmin()||!confirm('⚠️ حذف هذه النقطة؟'))return;
+  db.collection('track_points').doc(safeId(id)).delete().then(()=>{map.closePopup();updateInfo('🗑️ تم حذف النقطة','success')}).catch(()=>updateInfo('⚠️ تعذّر الحذف','error'));
+}
+async function deleteTrack(id){
+  if(!isAdmin()||!confirm('⚠️ حذف المسلك وجميع نقاطه نهائياً؟'))return;
+  try{
+    const s=await db.collection('track_points').where('trackId','==',safeId(id)).get();
+    const b=db.batch();s.forEach(d=>b.delete(d.ref));b.delete(db.collection('tracks').doc(safeId(id)));
+    await b.commit();updateInfo('🗑️ تم حذف المسلك','success');
+  }catch(e){updateInfo('⚠️ تعذّر الحذف','error')}
+}
+
+// ===== التنبيهات =====
+let audioCtx=null;
+function getAudio(){if(!audioCtx){const A=window.AudioContext||window.webkitAudioContext;if(A)audioCtx=new A()}return audioCtx}
+function unlockAudio(){const c=getAudio();if(c&&c.state==='suspended')c.resume()}
+['pointerdown','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,unlockAudio,{once:true,passive:true}));
+function beep(c,f,t,g,s,d){const o=c.createOscillator(),n=c.createGain();o.type=t;o.frequency.value=f;n.gain.value=g;o.connect(n);n.connect(c.destination);o.start(c.currentTime+s);o.stop(c.currentTime+s+d)}
+function playSound(){try{const c=getAudio();if(!c||c.state!=='running')return;beep(c,660,'sine',.12,0,.25);beep(c,880,'sine',.12,.3,.25);beep(c,1100,'sine',.12,.6,.4)}catch(e){}}
+async function enableAlerts(){
+  unlockAudio();const c=getAudio();if(c){try{beep(c,600,'sine',.08,0,.25)}catch(e){}}
+  if('Notification' in window&&Notification.permission==='default'){try{await Notification.requestPermission()}catch(e){}}
+  alertsEnabled=true;const b=$('enableAlertsBtn');b.textContent='🔔 التنبيهات مفعّلة';b.classList.add('on');
+}
+function notifyNewPoints(list){
+  const p=list[list.length-1],t=tracks.find(x=>x.id===p.trackId);
+  const name=t?t.name:'مسلك';
+  $('aTrack').textContent='🛣️ '+name+(t&&t.commune?' - '+t.commune:'');
+  $('aDetail').textContent='🔧 '+PHASES[p.phase].label+' | 🗺️ '+p.lat.toFixed(5)+', '+p.lng.toFixed(5)+(list.length>1?' (+'+(list.length-1)+' نقاط أخرى)':'');
+  $('aNote').textContent=p.note?'📝 '+p.note:'';
+  $('aTime').textContent='🕒 '+new Date().toLocaleString('ar');
+  const o=$('alertOverlay');o.dataset.lat=p.lat;o.dataset.lng=p.lng;o.classList.add('active');
+  playSound();
+  if('Notification' in window&&Notification.permission==='granted'){try{new Notification('🚜 كيلومتر جديد',{body:name+' - '+PHASES[p.phase].label})}catch(e){}}
+  if(document.hidden)document.title='🚜 نقطة جديدة!';
+}
+function closeAlert(){
+  const o=$('alertOverlay');o.classList.remove('active');document.title=baseTitle;
+  const a=parseFloat(o.dataset.lat),b=parseFloat(o.dataset.lng);
+  if(Number.isFinite(a)&&Number.isFinite(b))map.flyTo([a,b],15,{duration:1.2});
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)document.title=baseTitle});
+
+function updateInfo(m,type){
+  const i=$('info');i.textContent=m;i.className=type||'';
+  clearTimeout(i._t);i._t=setTimeout(()=>{i.className=''},6000);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!loginScreen.classList.contains('hidden')){e.preventDefault();login()}});
+
+applyAuthUI();
+startCloud();
+</script>
+</body>
+</html>
