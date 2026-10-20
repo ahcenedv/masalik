@@ -45,7 +45,11 @@ body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,
 .form-container .btn{background:var(--g);color:#fff;border-color:var(--g);font-weight:bold;cursor:pointer}
 .form-container .btn.alt{background:var(--o);border-color:var(--o)}
 .form-container .loc{cursor:pointer;background:#fff}
-.staff-only{display:none!important}body.is-staff .staff-only{display:flex!important}
+.staff-only,.field-only{display:none!important}body.is-staff .staff-only,body.is-field .field-only{display:flex!important}
+.km-dot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.km-dot.open{background:var(--o)}.km-dot.prep{background:var(--g)}.km-dot.latest{animation:ping 1.4s ease-out infinite}
+.gps-status{width:100%;text-align:center;font-size:12px;color:#33442f;background:#f1f8e9;border-radius:30px;padding:6px 10px}
+.form-container .btn.stop{background:#c62828;border-color:#c62828}
 body:not(.is-admin) .admin-only{display:none!important}
 .tracks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:10px}
 .track-card{background:#fff;border-radius:14px;padding:10px 14px;box-shadow:0 4px 15px rgba(0,0,0,.1);border-right:5px solid var(--g);font-size:12px}
@@ -122,7 +126,7 @@ body:not(.is-admin) .admin-only{display:none!important}
     <button class="btn" onclick="addTrack()">➕ إنشاء المسلك</button>
   </div>
 
-  <div class="form-container staff-only" id="pointForm">
+  <div class="form-container field-only" id="pointForm">
     <h3>📌 تسجيل نقطة جديدة (كيلومتر مفتوح)</h3>
     <select id="pTrack" style="flex:1.5;min-width:130px"></select>
     <select id="pPhase" style="flex:1;min-width:90px">
@@ -137,6 +141,14 @@ body:not(.is-admin) .admin-only{display:none!important}
     <button class="btn alt" id="addPointBtn" onclick="addPoint()">📌 تسجيل النقطة</button>
   </div>
 
+  <div class="form-container field-only" id="gpsPanel">
+    <h3>📡 التتبع المباشر عبر GPS (للمقاول أو المفوَّض)</h3>
+    <select id="gTrack" style="flex:1.5;min-width:130px"></select>
+    <select id="gPhase" style="flex:1;min-width:90px"><option value="open">🚧 فتح</option><option value="prep">🚜 تهيئة</option></select>
+    <select id="gStep" style="flex:1;min-width:120px"><option value="50">نقطة كل 50 م</option><option value="100" selected>نقطة كل 100 م</option><option value="250">نقطة كل 250 م</option><option value="500">نقطة كل 500 م</option></select>
+    <button class="btn" id="gBtn" onclick="toggleTracking()">▶️ بدء التتبع</button>
+    <div class="gps-status" id="gStatus">⏸️ غير مفعّل - اختر المسلك ثم ابدأ، وأبقِ الصفحة مفتوحة والشاشة مضيئة أثناء العمل</div>
+  </div>
   <div class="tracks" id="tracksList"></div>
 
   <div class="legend">
@@ -180,9 +192,10 @@ const layer=L.layerGroup().addTo(map);
 let tracks=[],points=[],db=null,auth=null,currentUser=null,currentRole=null;
 let tracksReady=false,pointsReady=false,fitted=false,alertsEnabled=false,openPopupId=null,rebuilding=false;
 const baseTitle=document.title;
-const EDIT_ROLES=['admin','staff','firefighter'];
-const roleLabels={admin:'مدير',staff:'طاقم ميداني',firefighter:'طاقم ميداني'};
-const canEdit=()=>EDIT_ROLES.indexOf(currentRole)!==-1;
+const EDIT_ROLES=['admin','staff','firefighter','contractor'];
+const roleLabels={admin:'مدير',staff:'طاقم ميداني',firefighter:'طاقم ميداني',contractor:'مقاول / مفوَّض'};
+const canField=()=>EDIT_ROLES.indexOf(currentRole)!==-1;
+const canEdit=()=>canField()&&currentRole!=='contractor';
 const isAdmin=()=>currentRole==='admin';
 
 // ===== المصادقة =====
@@ -209,6 +222,8 @@ async function handleAuthChange(user){
 }
 function applyAuthUI(){
   document.body.classList.toggle('is-staff',canEdit());
+  document.body.classList.toggle('is-field',canField());
+  if(!canField()&&watchId!==null)stopTracking();
   document.body.classList.toggle('is-admin',isAdmin());
   $('loginBtn').style.display=currentUser?'none':'';
   $('logoutBtn').style.display=currentUser?'':'none';
@@ -233,12 +248,12 @@ function cleanTrack(d,id){
 function cleanPoint(d,id){
   if(!d)return null;const lat=Number(d.lat),lng=Number(d.lng);
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||!PHASES[d.phase])return null;
-  return{id:safeId(id),trackId:safeId(d.trackId),phase:d.phase,lat:lat,lng:lng,
+  return{id:safeId(id),trackId:safeId(d.trackId),phase:d.phase,lat:lat,lng:lng,mark:d.mark!==false,auto:!!d.auto,
     date:/^\d{4}-\d{2}-\d{2}$/.test(String(d.date||''))?d.date:todayStr(),
     note:String(d.note||'').slice(0,300),addedAt:String(d.addedAt||'').slice(0,40),addedBy:String(d.addedBy||'').slice(0,80)};
 }
 function startCloud(){
-  try{firebase.initializeApp(firebaseConfig);db=firebase.firestore();auth=firebase.auth()}
+  try{firebase.initializeApp(firebaseConfig);db=firebase.firestore();try{db.enablePersistence({synchronizeTabs:true}).catch(()=>{})}catch(e){}auth=firebase.auth()}
   catch(e){setStatus(false,'تعذّر تحميل خدمات السحابة');return}
   auth.onAuthStateChanged(handleAuthChange);
   db.collection('tracks').onSnapshot(s=>{
@@ -248,7 +263,7 @@ function startCloud(){
   db.collection('track_points').orderBy('addedAt').onSnapshot(s=>{
     if(pointsReady){
       const fresh=[];
-      s.docChanges().forEach(c=>{if(c.type==='added'&&!c.doc.metadata.hasPendingWrites){const p=cleanPoint(c.doc.data(),c.doc.id);if(p)fresh.push(p)}});
+      s.docChanges().forEach(c=>{if(c.type==='added'&&!c.doc.metadata.hasPendingWrites){const p=cleanPoint(c.doc.data(),c.doc.id);if(p&&p.mark)fresh.push(p)}});
       if(fresh.length)notifyNewPoints(fresh);
     }
     points=[];s.forEach(d=>{const p=cleanPoint(d.data(),d.id);if(p)points.push(p)});
@@ -274,8 +289,8 @@ function render(){
     });
     pts.forEach(p=>{
       const isLast=latest&&p.id===latest.id&&t.status==='active';
-      const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-17],
-        html:'<div class="km-pin '+p.phase+(isLast?' latest':'')+'">'+p.cum.toFixed(1)+'</div>'})})
+      const m=L.marker([p.lat,p.lng],{icon:L.divIcon(p.mark?{className:'',iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-17],
+        html:'<div class="km-pin '+p.phase+(isLast?' latest':'')+'">'+p.cum.toFixed(1)+'</div>'}:{className:'',iconSize:[12,12],iconAnchor:[6,6],popupAnchor:[0,-6],html:'<div class="km-dot '+p.phase+(isLast?' latest':'')+'"></div>'})})
         .addTo(layer).bindPopup(pointPopup(p,t),{maxWidth:260});
       m._pid=p.id;
     });
@@ -283,6 +298,7 @@ function render(){
   });
   const sel=$('pTrack'),keep=sel.value;sel.innerHTML=selHtml||'<option value="">— أنشئ مسلكاً أولاً —</option>';
   if(keep)sel.value=keep;
+  const gs=$('gTrack');if(gs&&watchId===null){const gk=gs.value;gs.innerHTML=sel.innerHTML;if(gk)gs.value=gk}
   if(!fitted&&tracksReady&&pointsReady&&bounds.length){map.fitBounds(bounds,{padding:[40,40],maxZoom:14});fitted=true}
   if(openPopupId){layer.eachLayer(l=>{if(l._pid===openPopupId)l.openPopup()})}
   rebuilding=false;
@@ -290,7 +306,7 @@ function render(){
 }
 function pointPopup(p,t){
   return '<div class="popup-content"><strong>🛣️ المسلك:</strong> '+esc(t.name)+'<br>'+
-    '<strong>🔧 العملية:</strong> '+PHASES[p.phase].label+'<br>'+
+    '<strong>🔧 العملية:</strong> '+PHASES[p.phase].label+(p.auto?' (📡 تتبع تلقائي)':'')+'<br>'+
     '<strong>📏 المسافة المنجزة:</strong> '+p.cum.toFixed(2)+' كلم<br>'+
     '<strong>🗺️ GPS:</strong> '+p.lat.toFixed(6)+', '+p.lng.toFixed(6)+'<br>'+
     '<strong>📅 التاريخ:</strong> '+esc(p.date)+'<br>'+
@@ -360,7 +376,7 @@ function addTrack(){
   .catch(e=>updateInfo(e.code==='permission-denied'?'⛔ ليست لديك صلاحية':'⚠️ تعذّر الحفظ','error'));
 }
 function addPoint(){
-  if(!canEdit()){updateInfo('⚠️ للطاقم المصرّح له فقط - سجّل الدخول أولاً','error');return}
+  if(!canField()){updateInfo('⚠️ للطاقم المصرّح له فقط - سجّل الدخول أولاً','error');return}
   const trackId=$('pTrack').value,phase=$('pPhase').value;
   const lat=parseFloat($('lat').value),lng=parseFloat($('lng').value);
   if(!trackId){updateInfo('⚠️ اختر المسلك','error');return}
@@ -423,6 +439,59 @@ function closeAlert(){
   if(Number.isFinite(a)&&Number.isFinite(b))map.flyTo([a,b],15,{duration:1.2});
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)document.title=baseTitle});
+
+// ===== التتبع المباشر =====
+let watchId=null,wakeLock=null,trk=null;
+const MAX_ACC=30;
+const gStatus=t=>{$('gStatus').textContent=t};
+async function getWake(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen')}catch(e){}}
+function toggleTracking(){if(watchId===null)startTracking();else stopTracking()}
+function startTracking(){
+  if(!canField()){updateInfo('⚠️ للمقاول أو المفوَّض فقط - سجّل الدخول أولاً','error');return}
+  const trackId=$('gTrack').value;
+  if(!trackId){updateInfo('⚠️ اختر المسلك أولاً','error');return}
+  if(!navigator.geolocation){updateInfo('⚠️ متصفحك لا يدعم تحديد الموقع','error');return}
+  trk={trackId:trackId,phase:$('gPhase').value,step:parseInt($('gStep').value,10)||100,last:null,lastT:0,since:0,count:0,dist:0};
+  watchId=navigator.geolocation.watchPosition(onGps,onGpsErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  getWake();
+  ['gTrack','gPhase','gStep'].forEach(i=>{$(i).disabled=true});
+  $('gBtn').textContent='⏹️ إيقاف التتبع';$('gBtn').classList.add('stop');
+  gStatus('⏳ جاري البحث عن إشارة GPS...');
+}
+function stopTracking(){
+  if(watchId!==null)navigator.geolocation.clearWatch(watchId);
+  watchId=null;
+  if(wakeLock){try{wakeLock.release()}catch(e){}wakeLock=null}
+  ['gTrack','gPhase','gStep'].forEach(i=>{$(i).disabled=false});
+  $('gBtn').textContent='▶️ بدء التتبع';$('gBtn').classList.remove('stop');
+  gStatus('⏸️ تم إيقاف التتبع'+(trk?' - سُجّلت '+trk.count+' نقطة ('+(trk.dist/1000).toFixed(2)+' كلم)':''));
+  trk=null;
+}
+function onGps(pos){
+  if(!trk||!canField())return;
+  const c=pos.coords,p={lat:c.latitude,lng:c.longitude},now=Date.now(),acc=Math.round(c.accuracy);
+  if(c.accuracy>MAX_ACC){gStatus('📡 إشارة ضعيفة (الدقة ≈ '+acc+' م) - في انتظار دقة أفضل');return}
+  if(!inBounds(p.lat,p.lng)){gStatus('⚠️ الموقع خارج ولاية سكيكدة');return}
+  if(!trk.last){savePoint(p,true,0,acc);return}
+  const d=km(trk.last,p)*1000;
+  gStatus('📡 تتبع مباشر: '+trk.count+' نقطة | '+(trk.dist/1000).toFixed(2)+' كلم | الدقة ≈ '+acc+' م');
+  if(d<trk.step)return;
+  if(d/Math.max(1,(now-trk.lastT)/1000)>40)return;
+  savePoint(p,(trk.since+d)>=1000,d,acc);
+}
+function savePoint(p,mark,d,acc){
+  const t=trk;t.last=p;t.lastT=Date.now();t.count++;t.dist+=d;t.since=mark?0:t.since+d;
+  db.collection('track_points').add({trackId:t.trackId,phase:t.phase,lat:p.lat,lng:p.lng,date:todayStr(),note:'',auto:true,mark:mark,
+    addedAt:new Date().toISOString(),addedBy:currentUser.email})
+  .catch(e=>gStatus(e.code==='permission-denied'?'⛔ ليست لديك صلاحية التسجيل':'⚠️ تعذّر الحفظ'));
+  gStatus('✅ تتبع مباشر: '+t.count+' نقطة | '+(t.dist/1000).toFixed(2)+' كلم | الدقة ≈ '+acc+' م');
+}
+function onGpsErr(e){
+  if(e.code===1){stopTracking();gStatus('⛔ تم رفض إذن الموقع - فعّله من إعدادات المتصفح ثم أعد المحاولة')}
+  else gStatus(e.code===3?'⌛ انتهت مهلة GPS، جاري إعادة المحاولة...':'⚠️ تعذّر تحديد الموقع');
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&watchId!==null)getWake()});
+window.addEventListener('beforeunload',e=>{if(watchId!==null){e.preventDefault();e.returnValue=''}});
 
 function updateInfo(m,type){
   const i=$('info');i.textContent=m;i.className=type||'';
