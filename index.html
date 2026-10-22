@@ -381,7 +381,7 @@ function addPoint(){
   const lat=parseFloat($('lat').value),lng=parseFloat($('lng').value);
   if(!trackId){updateInfo('⚠️ اختر المسلك','error');return}
   if(!Number.isFinite(lat)||!Number.isFinite(lng)){updateInfo('⚠️ أدخل إحداثيات صحيحة أو اضغط 📍','error');return}
-  if(!inBounds(lat,lng)){updateInfo('⚠️ الإحداثيات خارج ولاية سكيكدة','error');return}
+  if(!inWilaya(lat,lng)){updateInfo('⚠️ الإحداثيات خارج حدود ولاية سكيكدة','error');return}
   const d=$('pDate').value,btn=$('addPointBtn');btn.disabled=true;
   db.collection('track_points').add({trackId:trackId,phase:phase,lat:lat,lng:lng,
     date:/^\d{4}-\d{2}-\d{2}$/.test(d)?d:todayStr(),note:$('pNote').value.trim().slice(0,300),
@@ -440,6 +440,44 @@ function closeAlert(){
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)document.title=baseTitle});
 
+// ===== حدود الولاية (GeoJSON) =====
+// ضع ملف skikda.geojson بجانب index.html؛ إن لم يوجد يُستعمل المستطيل التقريبي GEO_BOUNDS
+let wilayaLayer=null,wilayaPolys=[];
+const overlays=L.control.layers(null,null,{position:'topright',collapsed:true}).addTo(map);
+function ringHas(r,x,y){let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))c=!c}return c}
+function polyHas(poly,x,y){if(!ringHas(poly[0],x,y))return false;for(let k=1;k<poly.length;k++)if(ringHas(poly[k],x,y))return false;return true}
+function segDist(x,y,a,b){
+  const kx=111320*Math.cos(y*Math.PI/180),ky=110540;
+  const ax=(a[0]-x)*kx,ay=(a[1]-y)*ky,bx=(b[0]-x)*kx,by=(b[1]-y)*ky;
+  const dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;let t=l?-(ax*dx+ay*dy)/l:0;t=Math.max(0,Math.min(1,t));
+  return Math.hypot(ax+t*dx,ay+t*dy)}
+function nearEdge(x,y,m){for(const poly of wilayaPolys)for(const r of poly)for(let i=1;i<r.length;i++)if(segDist(x,y,r[i-1],r[i])<=m)return true;return false}
+function inWilaya(lat,lng){
+  if(!wilayaPolys.length)return inBounds(lat,lng);
+  return wilayaPolys.some(q=>polyHas(q,lng,lat))||nearEdge(lng,lat,300);
+}
+function collectPolys(g,out){
+  if(!g)return;
+  if(g.type==='FeatureCollection')g.features.forEach(f=>collectPolys(f,out));
+  else if(g.type==='Feature')collectPolys(g.geometry,out);
+  else if(g.type==='GeometryCollection')g.geometries.forEach(x=>collectPolys(x,out));
+  else if(g.type==='Polygon')out.push(g.coordinates);
+  else if(g.type==='MultiPolygon')g.coordinates.forEach(c=>out.push(c));
+}
+function featName(pr){if(!pr)return '';for(const k of['name:ar','name_ar','NAME_AR','ADM3_AR','ADM2_AR','ADM1_AR','name','NAME','shapeName','NAME_3','NAME_2','NAME_1','ADM3_FR','ADM1_FR']){if(typeof pr[k]==='string'&&pr[k])return pr[k]}return ''}
+function loadWilaya(g){
+  const polys=[];collectPolys(g,polys);if(!polys.length)return;
+  wilayaPolys=polys;
+  if(wilayaLayer){map.removeLayer(wilayaLayer);overlays.removeLayer(wilayaLayer)}
+  wilayaLayer=L.geoJSON(g,{style:{color:'#1b5e20',weight:3,fillColor:'#66bb6a',fillOpacity:.05,dashArray:'8 5'},
+    onEachFeature:(f,l)=>{const n=featName(f.properties);if(n)l.bindTooltip(n,{sticky:true})}}).addTo(map);
+  wilayaLayer.bringToBack();overlays.addOverlay(wilayaLayer,'🗺️ حدود الولاية');
+  if(!fitted){try{map.fitBounds(wilayaLayer.getBounds(),{padding:[20,20]})}catch(e){}}
+  map.attributionControl.addAttribution('حدود الولاية: geoBoundaries.org / OSM');
+  updateInfo('🗺️ تم تحميل حدود الولاية ('+polys.length+' مضلعاً) وسيُتحقق منها عند تسجيل النقاط','success');
+}
+fetch('skikda.geojson',{cache:'no-cache'}).then(r=>r.ok?r.json():Promise.reject()).then(loadWilaya).catch(()=>{});
+
 // ===== التتبع المباشر =====
 let watchId=null,wakeLock=null,trk=null;
 const MAX_ACC=30;
@@ -471,7 +509,7 @@ function onGps(pos){
   if(!trk||!canField())return;
   const c=pos.coords,p={lat:c.latitude,lng:c.longitude},now=Date.now(),acc=Math.round(c.accuracy);
   if(c.accuracy>MAX_ACC){gStatus('📡 إشارة ضعيفة (الدقة ≈ '+acc+' م) - في انتظار دقة أفضل');return}
-  if(!inBounds(p.lat,p.lng)){gStatus('⚠️ الموقع خارج ولاية سكيكدة');return}
+  if(!inWilaya(p.lat,p.lng)){gStatus('⚠️ الموقع خارج حدود ولاية سكيكدة');return}
   if(!trk.last){savePoint(p,true,0,acc);return}
   const d=km(trk.last,p)*1000;
   gStatus('📡 تتبع مباشر: '+trk.count+' نقطة | '+(trk.dist/1000).toFixed(2)+' كلم | الدقة ≈ '+acc+' م');
